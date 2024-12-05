@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+import hashlib
+import xml.etree.ElementTree as ET
+from datetime import datetime
+import os
+import sys
+
+def CalcMD5(File):
+	HashMD5 = hashlib.md5()
+
+	with open(File, "rb") as file:
+		for chunk in iter(lambda: file.read(4096), b""):
+			HashMD5.update(chunk)
+
+	return HashMD5.hexdigest()
+
+File = "flashfile.xml"
+XMLFile = ET.parse(File)
+Root = XMLFile.getroot()
+Header = Root.find('header')
+PhoneModel = Header.find('phone_model').get('model')
+SoftwareVersion = Header.find('software_version').get('version')
+SparsingEnabled = Header.find('sparsing').get('enabled')
+SparsingMaxSize = Header.find('sparsing').get('max-sparse-size')
+LogFile = datetime.now().strftime(f"Logs/Log_{PhoneModel}_%y-%m-%d_%H.%M.%S.txt")
+
+os.makedirs("Logs", exist_ok=True)
+
+Steps = Root.find('steps')
+
+with open(LogFile, "a") as log:
+	print(f"Phone Model: {PhoneModel}\nSoftware Version: {SoftwareVersion}\nSparsing Enabled: {SparsingEnabled}\nMax Sparse Size: {SparsingMaxSize}\nLog file: {LogFile}\n")
+	log.write(f"Phone Model: {PhoneModel}\nSoftware Version: {SoftwareVersion}\nSparsing Enabled: {SparsingEnabled}\nMax Sparse Size: {SparsingMaxSize}\nLog file: {LogFile}\n\n")
+
+	for Step in Steps.findall('step'):
+		Operation = Step.get('operation')
+		Partition = Step.get('partition')
+		Variable = Step.get('var')
+
+		Arguments = Variable
+
+		if Operation == "flash":
+			Filename = Step.get('filename')
+			MD5CheckSum = Step.get('MD5')
+
+			msg = f"Correct MD5 for {Filename}"
+			if CalcMD5(Filename) != MD5CheckSum:
+				msg = "Incorrect MD5"
+				print(f"{msg}, Exiting")
+				log.write(f"{msg}: {MD5CheckSum}, Exiting")
+				log.close
+				sys.exit(1)
+			print(f"{msg}, Continue")
+			log.write(f"{msg}: {MD5CheckSum}\n")
+
+			Arguments = f"{Partition} {Filename}"
+			msg = f"Flashing {Filename} in {Partition}\n"
+
+		if Operation == "erase":
+			Arguments = Partition
+			msg = f"Erasing partition '{Partition}'\n"
+
+		if Operation == "oem":
+			msg = f"executing OEM command '{Variable}'\n"
+
+		if Operation == "getvar":
+			msg = f"Getting variable '{Variable}'\n"
+
+		print(msg)
+		log.write(f"{msg}\n")
+		os.system(f"fastboot {Operation} {Arguments}")
+
+	msg = "Process completed"
+	print(msg)
+	log.write(msg)
+	
+log.close
